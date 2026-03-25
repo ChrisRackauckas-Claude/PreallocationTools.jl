@@ -74,6 +74,30 @@ analyticalsolution = [3.0 0; 0 0]
     @test resize!(dc, 8) === dc
 end
 
+# Test warn_on_resize option
+@testset "warn_on_resize option" begin
+    # Default: warn_on_resize = true
+    dc_warn = DiffCache(zeros(2))
+    @test dc_warn.warn_on_resize == true
+
+    # Explicit: warn_on_resize = false
+    dc_nowarn = DiffCache(zeros(2); warn_on_resize = false)
+    @test dc_nowarn.warn_on_resize == false
+
+    # warn_on_resize = false suppresses warning on cache enlargement
+    dc_nowarn2 = DiffCache(zeros(2), 0; warn_on_resize = false)
+    @test_nowarn ForwardDiff.gradient(x -> get_tmp(dc_nowarn2, x)[1], ones(4))
+
+    # zero and copy preserve warn_on_resize
+    dc = DiffCache(zeros(3); warn_on_resize = false)
+    @test zero(dc).warn_on_resize == false
+    @test copy(dc).warn_on_resize == false
+
+    dc2 = DiffCache(zeros(3); warn_on_resize = true)
+    @test zero(dc2).warn_on_resize == true
+    @test copy(dc2).warn_on_resize == true
+end
+
 # Test resize! functionality for FixedSizeDiffCache
 @testset "resize! for FixedSizeDiffCache" begin
     u = rand(10)

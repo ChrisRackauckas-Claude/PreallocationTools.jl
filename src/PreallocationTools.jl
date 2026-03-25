@@ -82,20 +82,21 @@ struct DiffCache{T <: AbstractArray, S <: AbstractArray}
     du::T
     dual_du::S
     any_du::Vector{Any}
+    warn_on_resize::Bool
 end
 
-function DiffCache(u::AbstractArray{T}, siz, chunk_sizes) where {T}
+function DiffCache(u::AbstractArray{T}, siz, chunk_sizes; warn_on_resize::Bool = true) where {T}
     x = adapt(
         ArrayInterface.parameterless_type(u),
         zeros(T, prod(chunk_sizes .+ 1) * prod(siz))
     )
     xany = Any[]
-    return DiffCache(u, x, xany)
+    return DiffCache(u, x, xany, warn_on_resize)
 end
 
 """
-`DiffCache(u::AbstractArray, N::Int = forwarddiff_compat_chunk_size(length(u)); levels::Int = 1)`
-`DiffCache(u::AbstractArray; N::AbstractArray{<:Int})`
+`DiffCache(u::AbstractArray, N::Int = forwarddiff_compat_chunk_size(length(u)); levels::Int = 1, warn_on_resize::Bool = true)`
+`DiffCache(u::AbstractArray; N::AbstractArray{<:Int}, warn_on_resize::Bool = true)`
 
 Builds a `DiffCache` object that stores both a version of the cache for `u`
 and for the `Dual` version of `u`, allowing use of pre-cached vectors with
@@ -103,25 +104,29 @@ forward-mode automatic differentiation via
 [ForwardDiff.jl](https://github.com/JuliaDiff/ForwardDiff.jl) (when available).
 Supports nested AD via keyword `levels` or specifying an array of chunk sizes.
 
+Set `warn_on_resize = false` to suppress the warning that is emitted when the
+cache is automatically enlarged during `get_tmp`. This is useful for adaptive
+solvers (e.g. BVP solvers) where cache expansion is expected behavior.
+
 The `DiffCache` also supports sparsity detection via
 [SparseConnectivityTracer.jl](https://github.com/adrhill/SparseConnectivityTracer.jl/).
 """
 function DiffCache(
         u::AbstractArray, N::Int = forwarddiff_compat_chunk_size(length(u));
-        levels::Int = 1
+        levels::Int = 1, warn_on_resize::Bool = true
     )
-    return DiffCache(u, size(u), N * ones(Int, levels))
+    return DiffCache(u, size(u), N * ones(Int, levels); warn_on_resize)
 end
-DiffCache(u::AbstractArray, N::AbstractArray{<:Int}) = DiffCache(u, size(u), N)
-function DiffCache(u::AbstractArray, ::Type{Val{N}}; levels::Int = 1) where {N}
-    return DiffCache(u, N; levels)
+DiffCache(u::AbstractArray, N::AbstractArray{<:Int}; warn_on_resize::Bool = true) = DiffCache(u, size(u), N; warn_on_resize)
+function DiffCache(u::AbstractArray, ::Type{Val{N}}; levels::Int = 1, warn_on_resize::Bool = true) where {N}
+    return DiffCache(u, N; levels, warn_on_resize)
 end
-DiffCache(u::AbstractArray, ::Val{N}; levels::Int = 1) where {N} = DiffCache(u, N; levels)
+DiffCache(u::AbstractArray, ::Val{N}; levels::Int = 1, warn_on_resize::Bool = true) where {N} = DiffCache(u, N; levels, warn_on_resize)
 
 # Deprecated: use DiffCache instead
-function dualcache(args...; kwargs...)
+function dualcache(args...; warn_on_resize::Bool = true, kwargs...)
     Base.depwarn("`dualcache` is deprecated, use `DiffCache` instead.", :dualcache)
-    return DiffCache(args...; kwargs...)
+    return DiffCache(args...; warn_on_resize, kwargs...)
 end
 
 """
@@ -194,10 +199,12 @@ performance in production code, pre-allocate with the suggested chunk size to av
 runtime allocations.
 """
 function enlargediffcache!(dc, nelem) #warning comes only once per DiffCache.
-    chunksize = div(nelem, length(dc.du)) - 1
-    @warn "The supplied DiffCache was too small and was enlarged. This incurs allocations
-    on the first call to `get_tmp`. If few calls to `get_tmp` occur and optimal performance is essential,
-    consider changing 'N'/chunk size of this DiffCache to $chunksize." maxlog = 1
+    if dc.warn_on_resize
+        chunksize = div(nelem, length(dc.du)) - 1
+        @warn "The supplied DiffCache was too small and was enlarged. This incurs allocations
+        on the first call to `get_tmp`. If few calls to `get_tmp` occur and optimal performance is essential,
+        consider changing 'N'/chunk size of this DiffCache to $chunksize." maxlog = 1
+    end
     return resize!(dc.dual_du, nelem)
 end
 
@@ -329,7 +336,7 @@ end
 
 # zero dispatches for PreallocationTools types
 function Base.zero(dc::DiffCache)
-    return DiffCache(zero(dc.du), zero(dc.dual_du), Any[])
+    return DiffCache(zero(dc.du), zero(dc.dual_du), Any[], dc.warn_on_resize)
 end
 
 function Base.zero(dc::FixedSizeDiffCache)
@@ -346,7 +353,7 @@ end
 
 # copy dispatches for PreallocationTools types
 function Base.copy(dc::DiffCache)
-    return DiffCache(copy(dc.du), copy(dc.dual_du), copy(dc.any_du))
+    return DiffCache(copy(dc.du), copy(dc.dual_du), copy(dc.any_du), dc.warn_on_resize)
 end
 
 function Base.copy(dc::FixedSizeDiffCache)
