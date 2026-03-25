@@ -1,8 +1,5 @@
 using LinearAlgebra,
-    OrdinaryDiffEq, DiffEqBase, Test, PreallocationTools, CUDA, ForwardDiff, ADTypes
-
-# upstream
-DiffEqBase.anyeltypedual(x::FixedSizeDiffCache, counter = 0) = Any
+    OrdinaryDiffEq, Test, PreallocationTools, CUDA, ForwardDiff, ADTypes
 
 #Dispatch tests
 chunk_size = 5
